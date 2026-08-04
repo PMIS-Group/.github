@@ -15,10 +15,10 @@ PMIS Engineering designs, develops, operates, and maintains software products an
 
 Our primary engineering technologies include:
 
-- PHP and Laravel
+- Java, PHP/Laravel and Node.js
 - TypeScript, React, and Next.js
 - PostgreSQL
-- Docker
+- Docker/AWS
 - GitHub Actions
 
 ## Security
