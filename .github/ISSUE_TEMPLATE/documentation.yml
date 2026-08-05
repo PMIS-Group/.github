@@ -1,0 +1,60 @@
+name: Documentation change
+description: Request new documentation or improvements to existing documentation.
+title: "[Docs]: "
+labels: ["type:documentation", "status:triage"]
+body:
+  - type: input
+    id: project
+    attributes:
+      label: Project or documentation area
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Documentation category
+      options: [Architecture, Local development, Environment, Deployment, Database, API or integration, Testing, Monitoring, Backup and recovery, Incident response, Security, User documentation, Engineering standard, Other]
+    validations:
+      required: true
+  - type: input
+    id: document-path
+    attributes:
+      label: Document name or path
+    validations:
+      required: true
+  - type: textarea
+    id: current-problem
+    attributes:
+      label: Problem with current documentation
+    validations:
+      required: true
+  - type: input
+    id: audience
+    attributes:
+      label: Intended audience
+    validations:
+      required: true
+  - type: textarea
+    id: required-change
+    attributes:
+      label: Required change
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: input
+    id: technical-reviewer
+    attributes:
+      label: Technical reviewer
+  - type: input
+    id: related-work
+    attributes:
+      label: Related task, PR, ADR, or release
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

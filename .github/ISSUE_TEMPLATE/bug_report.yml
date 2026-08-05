@@ -1,0 +1,100 @@
+name: Bug report
+description: Report reproducible incorrect behavior in a PMIS application or service.
+title: "[Bug]: "
+labels: ["type:bug", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "Remove passwords, tokens, credentials, private keys, personal data, and confidential client content. Do not use this form for confidential security vulnerabilities; report them privately to office@pmis.com."
+  - type: checkboxes
+    id: duplicates
+    attributes:
+      label: Duplicate check
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+  - type: input
+    id: area
+    attributes:
+      label: Project or repository area
+      placeholder: Repository, service, module, or feature area
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options: [Development, Staging, Production, Unknown]
+    validations:
+      required: true
+  - type: textarea
+    id: business-impact
+    attributes:
+      label: Business impact
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options: [Critical, High, Medium, Low]
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or logs
+      description: Sanitize all evidence before sharing.
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Is this a regression?
+      options: [Yes, No, Unknown]
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+  - type: dropdown
+    id: security-impact
+    attributes:
+      label: Does this have a security impact?
+      options: [No, Yes - report privately, Unknown]
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

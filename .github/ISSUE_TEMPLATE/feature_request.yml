@@ -1,0 +1,88 @@
+name: Feature request
+description: Propose a new capability or meaningful product improvement.
+title: "[Feature]: "
+labels: ["type:feature", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: An implementation idea is not a substitute for describing the business problem. Do not include confidential client information.
+  - type: input
+    id: project
+    attributes:
+      label: Project or product
+    validations:
+      required: true
+  - type: input
+    id: stakeholder
+    attributes:
+      label: Requesting stakeholder or business area
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Business problem
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Proposed outcome
+    validations:
+      required: true
+  - type: textarea
+    id: user-story
+    attributes:
+      label: User story
+      placeholder: As a..., I want..., so that...
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: security-privacy
+    attributes:
+      label: Security and privacy considerations
+    validations:
+      required: true
+  - type: textarea
+    id: operational
+    attributes:
+      label: Operational considerations
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority recommendation
+      options: [Critical, High, Medium, Low]
+    validations:
+      required: true
+  - type: input
+    id: target-date
+    attributes:
+      label: Target date, if applicable
+  - type: textarea
+    id: supporting-documentation
+    attributes:
+      label: Supporting documentation
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

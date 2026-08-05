@@ -1,0 +1,82 @@
+name: Technical task
+description: Track engineering, infrastructure, maintenance, refactoring, or operational work.
+title: "[Task]: "
+labels: ["type:technical-task", "status:triage"]
+body:
+  - type: input
+    id: project
+    attributes:
+      label: Project or repository
+    validations:
+      required: true
+  - type: dropdown
+    id: task-type
+    attributes:
+      label: Task type
+      options: [Maintenance, Refactoring, Infrastructure, CI/CD, Dependency update, Performance, Database, Monitoring, Security hardening, Technical debt, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: technical-context
+    attributes:
+      label: Technical context
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: Business or operational reason
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-work
+    attributes:
+      label: Proposed work
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: testing
+    attributes:
+      label: Testing requirements
+    validations:
+      required: true
+  - type: textarea
+    id: security-impact
+    attributes:
+      label: Security impact
+  - type: textarea
+    id: data-impact
+    attributes:
+      label: Database or data impact
+  - type: textarea
+    id: deployment-impact
+    attributes:
+      label: Deployment impact
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback considerations
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+  - type: textarea
+    id: risks
+    attributes:
+      label: Known risks
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation required
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

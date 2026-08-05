@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: mailto:office@pmis.com
+    about: Do not submit security vulnerabilities as public issues. Report them privately by email.
+  - name: Internal support
+    url: mailto:office@pmis.com
+    about: General user support must follow the approved internal support process.

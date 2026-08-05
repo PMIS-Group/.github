@@ -1,0 +1,66 @@
+name: Security concern — non-confidential only
+description: Track non-sensitive security hardening work. Do not disclose vulnerabilities here.
+title: "[Security]: "
+labels: ["type:security", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "## Do not submit exploitable vulnerabilities\n\nDo not include credentials, access tokens, private keys, personal information, confidential client data, or production details. Confidential vulnerabilities must be reported privately to office@pmis.com."
+  - type: checkboxes
+    id: non-sensitive-confirmation
+    attributes:
+      label: Non-sensitive report confirmation
+      options:
+        - label: I confirm this issue contains no sensitive vulnerability details.
+          required: true
+  - type: input
+    id: project
+    attributes:
+      label: Project or repository
+    validations:
+      required: true
+  - type: dropdown
+    id: control-area
+    attributes:
+      label: Security control area
+      options: [Authentication, Authorization, Secrets, Dependencies, Input validation, Data protection, Logging, Monitoring, Infrastructure, Backup and recovery, Access control, Secure configuration, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: concern
+    attributes:
+      label: Non-confidential concern
+    validations:
+      required: true
+  - type: textarea
+    id: business-risk
+    attributes:
+      label: Business risk
+    validations:
+      required: true
+  - type: textarea
+    id: remediation
+    attributes:
+      label: Recommended remediation
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Testing or verification requirements
+    validations:
+      required: true
+  - type: input
+    id: related-standard
+    attributes:
+      label: Related standard or policy
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

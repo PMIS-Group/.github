@@ -1,0 +1,12 @@
+# Default ownership for this organization standards repository.
+# Repository-specific CODEOWNERS files may define more granular ownership.
+# CODEOWNERS affects approval requirements only when GitHub rulesets or branch protection require code-owner review.
+# The Leads team must have access to the relevant repository for ownership rules to work.
+
+* @PMIS-Group/Leads
+/.github/ @PMIS-Group/Leads
+/CODEOWNERS @PMIS-Group/Leads
+/SECURITY.md @PMIS-Group/Leads
+/GOVERNANCE.md @PMIS-Group/Leads
+/CONTRIBUTING.md @PMIS-Group/Leads
+/profile/ @PMIS-Group/Leads
