@@ -1,6 +1,6 @@
 name: Bug report
 description: Report a reproducible problem
-labels: [bug]
+labels: ["type: bug"]
 body:
   - type: markdown
     attributes:
