@@ -18,11 +18,19 @@ on:
         required: false
         type: string
         default: main
+      paired_repository:
+        description: "Optional paired frontend or backend repository, owner/name"
+        required: false
+        type: string
+        default: ""
       publish_report:
         description: "Create or update a report PR from scheduled/manual runs"
         required: false
         type: boolean
         default: false
+    secrets:
+      PMIS_PROJECT_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -43,6 +51,14 @@ jobs:
           repository: PMIS-Group/.github
           path: .pmis-security-tool
           ref: ${{ inputs.engine_ref }}
+      - name: Check out paired repository
+        if: inputs.paired_repository != ''
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.paired_repository }}
+          token: ${{ secrets.PMIS_PROJECT_TOKEN || github.token }}
+          path: .pmis-security-paired
+          fetch-depth: 1
       - name: Read GitHub dependency advisories
         uses: actions/github-script@v7
         with:
@@ -64,6 +80,7 @@ jobs:
             --scope "${{ inputs.scope }}" \
             --base-ref "${{ inputs.base_ref }}" \
             --dependency-alerts pmis-dependency-alerts.json \
+            --paired-root .pmis-security-paired \
             --output pmis-security-report.md
       - name: Publish short result in job summary
         run: |
