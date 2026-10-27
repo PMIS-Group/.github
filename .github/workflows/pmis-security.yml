@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: ""
+      engine_ref:
+        description: "PMIS Security engine revision to execute"
+        required: false
+        type: string
+        default: main
       publish_report:
         description: "Create or update a report PR from scheduled/manual runs"
         required: false
@@ -36,7 +41,7 @@ jobs:
         with:
           repository: PMIS-Group/.github
           path: .pmis-security-tool
-          ref: main
+          ref: ${{ inputs.engine_ref }}
       - name: Generate report
         run: |
           python .pmis-security-tool/pmis-security/pmis_security.py \
@@ -82,7 +87,7 @@ jobs:
             const old = comments.find(c => c.body?.includes(marker));
             if (old) await github.rest.issues.updateComment({ owner, repo, comment_id: old.id, body: finalBody });
             else await github.rest.issues.createComment({ owner, repo, issue_number: context.issue.number, body: finalBody });
-
+            
   publish:
     name: Publish PMIS Security report
     needs: audit
