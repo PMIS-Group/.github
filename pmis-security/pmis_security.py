@@ -58,7 +58,8 @@ def scan(fs,out,base):
           ('AWS access key committed',r'\bAKIA[0-9A-Z]{16}\b','critical'),
           ('Hardcoded credential-like value',r'(?i)(?:password|api[_-]?key|secret|token)\s*[:=]\s*["\'][^"\']{8,}["\']','high')]:
             m=re.search(rx,c)
-            safe_reference = ('${{ secrets.' in c or re.search(r'\$[A-Za-z_]', (m.group(0) if m else '')) or '/src/test/' in '/'+rel or 'Sanitizer' in p.name or p.name == '.env.example')
+            is_test = bool(re.search(r'(^|/)(?:test|tests|__tests__)/|\.(?:test|spec)\.[^/]+$', rel, re.I))
+            safe_reference = ('${{ secrets.' in c or re.search(r'\$[A-Za-z_]', (m.group(0) if m else '')) or is_test or 'Sanitizer' in p.name or p.name == '.env.example')
             if m and not safe_reference:find(out,'sensitive-data',priority,title,'Sensitive data scanner',p,c,m,'A value resembling a credential is tracked in source.','Secrets in Git history can be copied, reused or exposed.','Remove it, rotate the real credential, and use deployment/GitHub secrets.',True)
         # Database migration guard
         if p.suffix=='.sql' and '/backups/' not in '/'+rel and re.search(r'(migration|migrations|flyway|liquibase)',low):
@@ -70,7 +71,7 @@ def scan(fs,out,base):
                 if m:find(out,'migration-guard',priority,title,'Database migration guard',p,c,m,desc,why,fix,confidence='needs verification' if title=='Unbounded database update' else 'confirmed')
         # Demo detector only runtime
         if re.search(r'(?i)(src|app|lib|features|controllers)',rel) and not re.search(r'(?i)(test|spec|story|example)',rel):
-            m=re.search(r'(?i)\b(mock|fixture|fake|dummy|sample|demo|hardcoded)\b',c)
+            m=re.search(r'\b(?:mock|fixture|fake|dummy|sample|demo)[A-Z_][A-Za-z0-9_]*\b',c)
             if m:find(out,'demo-data','medium','Demo or mock marker in runtime code','Demo-data detector',p,c,m,'Runtime source contains a demo/mock marker.','A screen can appear complete while using non-shared or non-persistent data.','Confirm intent; connect real API/storage or isolate it behind a development-only adapter.',confidence='needs verification')
         # cleanup
         m=re.search(r'(?i)\b(TODO|FIXME|HACK|XXX)\b',c)
@@ -117,7 +118,9 @@ def report(repo,scope,fs,out):
         except Exception:pass
     for f in out:
         if f.fingerprint in old:f.title='Regression: '+f.title;f.area='Regression memory / '+f.area
-    out.sort(key=lambda x:(-WEIGHT.get(x.priority,0),x.path,x.line)); score=max(0,100-min(100,sum(WEIGHT.get(x.priority,0) for x in out))); counts={p:sum(x.priority==p for x in out) for p in WEIGHT}; ready=counts['critical']==0 and counts['high']==0 and any('.github/workflows/' in str(p.relative_to(ROOT)) for p in fs)
+    out.sort(key=lambda x:(-WEIGHT.get(x.priority,0),x.path,x.line)); counts={p:sum(x.priority==p for x in out) for p in WEIGHT}
+    penalty=min(40,counts['critical']*40)+min(25,counts['high']*8)+min(15,counts['medium'])+min(5,counts['low']//2)
+    score=max(0,100-penalty); ready=counts['critical']==0 and counts['high']==0 and any('.github/workflows/' in str(p.relative_to(ROOT)) for p in fs)
     lines=[f'# PMIS Security Report — `{repo}`','',f'**Checked:** {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}  ',f'**Scope:** {scope}  ',f'**Project health score:** **{score}/100**  ',f'**Release readiness:** {"✅ Ready" if ready else "❌ Not ready"}','',f'**Findings:** {counts["critical"]} critical · {counts["high"]} high · {counts["medium"]} medium · {counts["low"]} low','','## Findings','']
     if not out:lines+=['✅ No static findings. Human review and runtime testing are still required.','']
     for f in out:
