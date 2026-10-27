@@ -1,0 +1,69 @@
+name: PMIS Security weekly organization progress
+
+on:
+  schedule:
+    - cron: '15 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Days of activity to include
+        required: false
+        default: '7'
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build weekly activity report
+        env:
+          GH_TOKEN: ${{ secrets.PMIS_PROJECT_TOKEN || github.token }}
+          DAYS: ${{ inputs.days || '7' }}
+        run: python pmis-security/organization_progress.py --org PMIS-Group --days "$DAYS" --output weekly-progress.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pmis-security-weekly-progress
+          path: weekly-progress.md
+          retention-days: 90
+      - name: Update report branch
+        id: report
+        run: |
+          set -euo pipefail
+          branch="pmis-security/organization-reports"
+          git config user.name "PMIS Security"
+          git config user.email "pmis-security@users.noreply.github.com"
+          git fetch origin "$branch" || true
+          if git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+            git checkout -B "$branch" "origin/$branch"
+          else
+            git checkout -B "$branch"
+          fi
+          mkdir -p security-reports
+          cp "$GITHUB_WORKSPACE/weekly-progress.md" "security-reports/weekly-$(date -u +%F).md"
+          cp "$GITHUB_WORKSPACE/weekly-progress.md" security-reports/weekly-latest.md
+          git add security-reports
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "docs: update PMIS Security weekly progress"
+            git push --force-with-lease origin "$branch"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Create report pull request
+        if: steps.report.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const head = 'pmis-security/organization-reports';
+            const open = await github.rest.pulls.list({ owner, repo, head: `${owner}:${head}`, state: 'open' });
+            if (!open.data.length) {
+              await github.rest.pulls.create({ owner, repo, head, base: context.payload.repository.default_branch, title: 'docs: PMIS Security weekly organization progress', body: 'Automated weekly organization progress report. It reports GitHub activity and links review work; it does not judge working hours or quality by itself.' });
+            }
