@@ -1,0 +1,126 @@
+name: PMIS Security Engine
+
+on:
+  workflow_call:
+    inputs:
+      scope:
+        description: "pull-request or full"
+        required: false
+        type: string
+        default: full
+      base_ref:
+        description: "Base SHA for test-gap comparison"
+        required: false
+        type: string
+        default: ""
+      publish_report:
+        description: "Create or update a report PR from scheduled/manual runs"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  audit:
+    name: PMIS Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: PMIS-Group/.github
+          path: .pmis-security-tool
+          ref: main
+      - name: Generate report
+        run: |
+          python .pmis-security-tool/pmis-security/pmis_security.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --scope "${{ inputs.scope }}" \
+            --base-ref "${{ inputs.base_ref }}" \
+            --output pmis-security-report.md
+      - name: Publish short result in job summary
+        run: |
+          cat pmis-security-summary.json
+          cat pmis-security-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pmis-security-report
+          path: |
+            pmis-security-report.md
+            pmis-security-summary.json
+            pmis-security-state.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Comment on pull request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('pmis-security-report.md', 'utf8');
+            const summary = JSON.parse(fs.readFileSync('pmis-security-summary.json', 'utf8'));
+            const marker = '<!-- pmis-security-report -->';
+            const body = `${marker}\n## PMIS Security\n\n**Health:** ${summary.health_score}/100 · **Release:** ${summary.release_ready ? 'ready' : 'not ready'}\n\n${summary.critical} critical · ${summary.high} high · ${summary.medium} medium · ${summary.low} low\n\n<details><summary>Open report preview</summary>\n\n${report.slice(0, 12000)}\n\n</details>\n\nFull Markdown report: workflow artifact **pmis-security-report**.`;
+            const { owner, repo } = context.repo;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: context.issue.number });
+            const old = comments.find(c => c.body?.includes(marker));
+            if (old) await github.rest.issues.updateComment({ owner, repo, comment_id: old.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: context.issue.number, body });
+
+  publish:
+    name: Publish PMIS Security report
+    needs: audit
+    if: inputs.publish_report && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: pmis-security-report
+          path: .pmis-security-artifact
+      - name: Update report branch
+        id: report
+        run: |
+          set -euo pipefail
+          branch="pmis-security/reports"
+          git config user.name "PMIS Security"
+          git config user.email "pmis-security@users.noreply.github.com"
+          git fetch origin "$branch" || true
+          if git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+            git checkout -B "$branch" "origin/$branch"
+          else
+            git checkout -B "$branch"
+          fi
+          mkdir -p security-reports .pmis-security
+          cp .pmis-security-artifact/pmis-security-report.md security-reports/latest.md
+          cp .pmis-security-artifact/pmis-security-state.json .pmis-security/history.json
+          git add security-reports/latest.md .pmis-security/history.json
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "docs: update PMIS Security report"
+            git push --force-with-lease origin "$branch"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Create or update report pull request
+        if: steps.report.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const head = 'pmis-security/reports';
+            const existing = await github.rest.pulls.list({ owner, repo, head: `${owner}:${head}`, state: 'open' });
+            if (!existing.data.length) {
+              await github.rest.pulls.create({ owner, repo, head, base: context.payload.repository.default_branch, title: 'docs: PMIS Security latest report', body: 'Automated PMIS Security report. Review findings before merging; this PR never changes application code.' });
+            }
