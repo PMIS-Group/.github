@@ -28,6 +28,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  security-events: read
 
 jobs:
   audit:
@@ -42,12 +43,27 @@ jobs:
           repository: PMIS-Group/.github
           path: .pmis-security-tool
           ref: ${{ inputs.engine_ref }}
+      - name: Read GitHub dependency advisories
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            try {
+              const alerts = await github.paginate(github.rest.dependabot.listAlertsForRepo, {
+                owner: context.repo.owner, repo: context.repo.repo, state: 'open', per_page: 100
+              });
+              fs.writeFileSync('pmis-dependency-alerts.json', JSON.stringify({ available: true, alerts }));
+            } catch (error) {
+              core.warning(`Dependabot advisory data unavailable: ${error.message}`);
+              fs.writeFileSync('pmis-dependency-alerts.json', JSON.stringify({ available: false, alerts: [] }));
+            }
       - name: Generate report
         run: |
           python .pmis-security-tool/pmis-security/pmis_security.py \
             --repository "$GITHUB_REPOSITORY" \
             --scope "${{ inputs.scope }}" \
             --base-ref "${{ inputs.base_ref }}" \
+            --dependency-alerts pmis-dependency-alerts.json \
             --output pmis-security-report.md
       - name: Publish short result in job summary
         run: |
