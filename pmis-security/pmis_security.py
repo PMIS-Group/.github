@@ -48,7 +48,7 @@ def find(out,rule,priority,title,area,p,content,match,desc,why,fix,redact=False,
     n=line_of(content,match); rel=str(p.relative_to(ROOT)); a,c=blame(rel,n)
     add(out,rule=rule,priority=priority,title=title,area=area,path=rel,line=n,excerpt=snippet(content.splitlines(),n,redact),description=desc,why=why,fix=fix,confidence=confidence,author=a,introduced=c)
 
-def scan(fs,out,base):
+def scan(fs,out,base,dependency_alerts=''):
     for p in fs:
         c=read(p); rel=str(p.relative_to(ROOT)); low=rel.lower()
         # Sensitive data scanner
@@ -87,6 +87,18 @@ def scan(fs,out,base):
     locks={'package-lock.json','pnpm-lock.yaml','yarn.lock','composer.lock','poetry.lock','go.sum'}
     if names & manifests and not names & locks:
         add(out,rule='dependency-lock',priority='medium',title='Dependency manifest has no lockfile',area='Dependency vulnerability scan',path=next(iter(names&manifests)),line=1,excerpt='Manifest is tracked but no supported lockfile was found.',description='Dependencies are not pinned by a lockfile.',why='Builds may resolve different versions over time.',fix='Generate and commit the lockfile used by CI.')
+    if dependency_alerts and Path(dependency_alerts).exists():
+        try:
+            alert_data=json.loads(read(Path(dependency_alerts)))
+            for alert in alert_data.get('alerts',[])[:50]:
+                dependency=alert.get('dependency',{}); advisory=alert.get('security_advisory',{})
+                severity=str(advisory.get('severity','medium')).lower()
+                priority=severity if severity in WEIGHT else 'medium'
+                package=dependency.get('package',{}).get('name','unknown package')
+                advisory_id=advisory.get('ghsa_id') or advisory.get('cve_id') or 'GitHub advisory'
+                add(out,rule='dependency-vulnerability',priority=priority,title=f'Known vulnerable dependency: {package}',area='Dependency vulnerability scan',path=dependency.get('manifest_path','dependency manifest'),line=1,excerpt=f'{package} · {advisory_id} · severity: {severity}',description='GitHub Dependabot reports an open advisory for a tracked dependency.',why='A known vulnerable library can expose the application even when application code is correct.',fix='Review the advisory and update, replace or explicitly mitigate the dependency.',confidence='confirmed')
+        except Exception:
+            pass
     if not any('.github/workflows/' in str(p.relative_to(ROOT)) for p in fs):
         add(out,rule='ci-guard',priority='high',title='No GitHub Actions workflow found',area='CI / deployment guard',path='.github/workflows',line=1,excerpt='No workflow files found.',description='No visible automated quality gate exists.',why='Broken code can reach the default branch without verification.',fix='Add CI for dependency install, tests, lint/format and build.')
     # document reality check
@@ -125,8 +137,9 @@ def report(repo,scope,fs,out):
     if not out:lines+=['✅ No static findings. Human review and runtime testing are still required.','']
     for f in out:
         lines += [f'### {ICON[f.priority]} {f.priority.upper()} — {f.title}','',f'**Status:** {f.confidence.replace("_"," ")}  ',f'**Area:** {f.area}  ',f'**Location:** `{f.path}:{f.line}`  ',f'**Introduced by:** {f.author} · commit `{f.introduced}`  ',f'**Fingerprint:** `{f.fingerprint}`','','**What was found**','',f.description,'','**Why it matters**','',f.why,'','**Exact relevant source**','',f'```text\n{f.excerpt}\n```','','**Required next step**','',f.fix,'']
-    lines += ['---','','## Coverage','','| Check | Result |','|---|---|','| Project health score | Included |','| BE ↔ FE compatibility | Heuristic now; paired-repository OpenAPI mode is configured per project |','| Database migration guard | Included |','| Demo-data detector | Included |','| Sensitive data scanner | Included; values are redacted |','| Dead / temporary code | Included |','| Dependency vulnerability scan | Lockfile readiness now; CVE feed can be added per ecosystem |','| CI / deployment guard | Included |','| Test-gap detector | Included for pull-request comparisons |','| Regression memory | Uses `.pmis-security/history.json` when present |','| Intern progress view | Weekly organization report uses PR/commit metadata |','| Release readiness report | Included |','| Document reality check | Included |','','> “Needs verification” is evidence for review, not an accusation.']
+    dependency_result='GitHub Dependabot advisories and lockfile readiness included' if (ROOT/'pmis-dependency-alerts.json').exists() else 'Lockfile readiness included; GitHub advisory data was unavailable'
+    lines += ['---','','## Coverage','','| Check | Result |','|---|---|','| Project health score | Included |','| BE ↔ FE compatibility | Heuristic now; paired-repository OpenAPI mode is configured per project |','| Database migration guard | Included |','| Demo-data detector | Included |','| Sensitive data scanner | Included; values are redacted |','| Dead / temporary code | Included |',f'| Dependency vulnerability scan | {dependency_result} |','| CI / deployment guard | Included |','| Test-gap detector | Included for pull-request comparisons |','| Regression memory | Uses `.pmis-security/history.json` when present |','| Intern progress view | Weekly organization report uses PR/commit metadata |','| Release readiness report | Included |','| Document reality check | Included |','','> “Needs verification” is evidence for review, not an accusation.']
     return '\n'.join(lines)+'\n',{'health_score':score,**counts,'release_ready':ready,'fingerprints':[f.fingerprint for f in out]}
 def main():
-    a=argparse.ArgumentParser();a.add_argument('--repository',default=os.getenv('GITHUB_REPOSITORY','local/repo'));a.add_argument('--scope',default='full');a.add_argument('--base-ref',default='');a.add_argument('--output',default='pmis-security-report.md');x=a.parse_args();fs=files();out=[];scan(fs,out,x.base_ref);md,meta=report(x.repository,x.scope,fs,out);Path(x.output).write_text(md);Path('pmis-security-summary.json').write_text(json.dumps(meta));Path('pmis-security-state.json').write_text(json.dumps({'fingerprints':meta['fingerprints'],'updated_at':datetime.now(timezone.utc).isoformat()},indent=2));print(json.dumps(meta))
+    a=argparse.ArgumentParser();a.add_argument('--repository',default=os.getenv('GITHUB_REPOSITORY','local/repo'));a.add_argument('--scope',default='full');a.add_argument('--base-ref',default='');a.add_argument('--dependency-alerts',default='pmis-dependency-alerts.json');a.add_argument('--output',default='pmis-security-report.md');x=a.parse_args();fs=files();out=[];scan(fs,out,x.base_ref,x.dependency_alerts);md,meta=report(x.repository,x.scope,fs,out);Path(x.output).write_text(md);Path('pmis-security-summary.json').write_text(json.dumps(meta));Path('pmis-security-state.json').write_text(json.dumps({'fingerprints':meta['fingerprints'],'updated_at':datetime.now(timezone.utc).isoformat()},indent=2));print(json.dumps(meta))
 if __name__=='__main__':main()
