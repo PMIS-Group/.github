@@ -68,10 +68,20 @@ jobs:
             const marker = '<!-- pmis-security-report -->';
             const body = `${marker}\n## PMIS Security\n\n**Health:** ${summary.health_score}/100 · **Release:** ${summary.release_ready ? 'ready' : 'not ready'}\n\n${summary.critical} critical · ${summary.high} high · ${summary.medium} medium · ${summary.low} low\n\n<details><summary>Open report preview</summary>\n\n${report.slice(0, 12000)}\n\n</details>\n\nFull Markdown report: workflow artifact **pmis-security-report**.`;
             const { owner, repo } = context.repo;
+            const commits = [...new Set([...report.matchAll(/commit `([0-9a-f]{7,40})`/g)].map(m => m[1]))].slice(0, 20);
+            const authors = new Set();
+            for (const ref of commits) {
+              try {
+                const commit = await github.rest.repos.getCommit({ owner, repo, ref });
+                if (commit.data.author?.login) authors.add(`@${commit.data.author.login}`);
+              } catch (_) { /* attribution remains in the report when history is unavailable */ }
+            }
+            const attribution = authors.size ? `\n\n**Relevant commit authors:** ${[...authors].join(', ')}\n_This is source attribution for review, not a statement of fault or intent._` : '';
+            const finalBody = body + attribution;
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: context.issue.number });
             const old = comments.find(c => c.body?.includes(marker));
-            if (old) await github.rest.issues.updateComment({ owner, repo, comment_id: old.id, body });
-            else await github.rest.issues.createComment({ owner, repo, issue_number: context.issue.number, body });
+            if (old) await github.rest.issues.updateComment({ owner, repo, comment_id: old.id, body: finalBody });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: context.issue.number, body: finalBody });
 
   publish:
     name: Publish PMIS Security report
