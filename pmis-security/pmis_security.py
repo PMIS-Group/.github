@@ -48,7 +48,36 @@ def find(out,rule,priority,title,area,p,content,match,desc,why,fix,redact=False,
     n=line_of(content,match); rel=str(p.relative_to(ROOT)); a,c=blame(rel,n)
     add(out,rule=rule,priority=priority,title=title,area=area,path=rel,line=n,excerpt=snippet(content.splitlines(),n,redact),description=desc,why=why,fix=fix,confidence=confidence,author=a,introduced=c)
 
-def scan(fs,out,base,dependency_alerts=''):
+def compatibility_with_pair(out, paired_root):
+    pair=Path(paired_root)
+    if not pair.exists():
+        return
+    def usable(root, suffixes):
+        return [p for p in root.rglob('*') if p.is_file() and p.suffix in suffixes and not any(x in SKIP for x in p.parts) and p.stat().st_size<1_000_000]
+    def calls(root):
+        values=set()
+        for p in usable(root,{'.ts','.tsx','.js','.jsx','.mjs','.cjs'}):
+            values |= set(re.findall(r"['\"](/api/[A-Za-z0-9_?=&${}/.-]+)",read(p)))
+        return {x.split('?')[0] for x in values}
+    def routes(root):
+        values=set()
+        for p in usable(root,{'.java','.kt','.php','.py','.cs'}):
+            c=read(p); base=(re.search(r'@RequestMapping\(\s*"([^"\\]+)"',c) or [None,''])[1]
+            for endpoint in re.findall(r'@(?:Get|Post|Put|Patch|Delete)Mapping\(\s*"([^"\\]*)"',c):
+                values.add((base.rstrip('/')+'/'+endpoint.lstrip('/')).rstrip('/') or '/')
+        return values
+    primary_calls, primary_routes, pair_calls, pair_routes=calls(ROOT),routes(ROOT),calls(pair),routes(pair)
+    ui_calls=primary_calls or pair_calls; api_routes=primary_routes or pair_routes
+    if not ui_calls or not api_routes:
+        return
+    def matches(call, route):
+        pattern='^'+re.sub(r'\\\{[^}]+\\\}',r'[^/]+',re.escape(route))+'/?$'
+        return bool(re.match(pattern,call))
+    missing=sorted(x for x in ui_calls if not any(matches(x,r) for r in api_routes))
+    if missing:
+        add(out,rule='be-fe-compatibility',priority='medium',title='Potential frontend/backend API mismatch',area='BE ↔ FE compatibility check',path='paired repository contract',line=1,excerpt='\n'.join(missing[:20]),description='Static frontend API paths do not clearly match static backend routes across the configured repository pair.',why='A deployed UI can request an endpoint that its paired backend does not provide.',fix='Review the API contract; update the frontend, backend or committed OpenAPI specification.',confidence='needs verification')
+
+def scan(fs,out,base,dependency_alerts='',paired_root=''):
     for p in fs:
         c=read(p); rel=str(p.relative_to(ROOT)); low=rel.lower()
         # Sensitive data scanner
@@ -119,11 +148,12 @@ def scan(fs,out,base,dependency_alerts=''):
         for p in be:routes|=set(re.findall(r'@(?:Get|Post|Put|Patch|Delete)Mapping\(\s*"([^"]*)"',read(p)))
         bad=[x for x in calls if not any(x.split('?')[0].endswith(r.strip('/')) or r.strip('/') in x for r in routes)]
         if bad:add(out,rule='be-fe-compatibility',priority='medium',title='Potential frontend/backend API mismatch',area='BE ↔ FE compatibility check',path=str(fe[0].relative_to(ROOT)),line=1,excerpt='\n'.join(sorted(bad)[:10]),description='Frontend paths do not clearly match backend routes found in this repository.',why='A UI can request an endpoint that no backend provides.',fix='Verify the API contract. Configure paired-repository OpenAPI mode for cross-repository projects.',confidence='needs verification')
+    compatibility_with_pair(out,paired_root)
     # generated temporary assets
     junk=[str(p.relative_to(ROOT)) for p in fs if p.name=='tsconfig.tsbuildinfo' or re.search(r'(?i)(^|/)(\.tmp|tmp-|temp-|screenshot|snapshot).*(\.png|\.txt|\.log)$',str(p.relative_to(ROOT)))]
     if junk:add(out,rule='tracked-artifacts',priority='low',title=f'{len(junk)} generated or temporary files are tracked',area='Dead / temporary code check',path=junk[0],line=1,excerpt='\n'.join(junk[:10]),description='Generated/cache/snapshot files are committed.',why='Review noise and repository size hide meaningful changes.',fix='Keep required assets only; remove generated files and add ignore rules.',confidence='needs verification')
 
-def report(repo,scope,fs,out):
+def report(repo,scope,fs,out,paired_root=''):
     history=ROOT/'.pmis-security/history.json'; old=set()
     if history.exists():
         try:old=set(json.loads(read(history)).get('fingerprints',[]))
@@ -138,8 +168,9 @@ def report(repo,scope,fs,out):
     for f in out:
         lines += [f'### {ICON[f.priority]} {f.priority.upper()} — {f.title}','',f'**Status:** {f.confidence.replace("_"," ")}  ',f'**Area:** {f.area}  ',f'**Location:** `{f.path}:{f.line}`  ',f'**Introduced by:** {f.author} · commit `{f.introduced}`  ',f'**Fingerprint:** `{f.fingerprint}`','','**What was found**','',f.description,'','**Why it matters**','',f.why,'','**Exact relevant source**','',f'```text\n{f.excerpt}\n```','','**Required next step**','',f.fix,'']
     dependency_result='GitHub Dependabot advisories and lockfile readiness included' if (ROOT/'pmis-dependency-alerts.json').exists() else 'Lockfile readiness included; GitHub advisory data was unavailable'
-    lines += ['---','','## Coverage','','| Check | Result |','|---|---|','| Project health score | Included |','| BE ↔ FE compatibility | Heuristic now; paired-repository OpenAPI mode is configured per project |','| Database migration guard | Included |','| Demo-data detector | Included |','| Sensitive data scanner | Included; values are redacted |','| Dead / temporary code | Included |',f'| Dependency vulnerability scan | {dependency_result} |','| CI / deployment guard | Included |','| Test-gap detector | Included for pull-request comparisons |','| Regression memory | Uses `.pmis-security/history.json` when present |','| Intern progress view | Weekly organization report uses PR/commit metadata |','| Release readiness report | Included |','| Document reality check | Included |','','> “Needs verification” is evidence for review, not an accusation.']
+    compatibility_result='Paired-repository static route comparison included' if paired_root and Path(paired_root).exists() else 'Single-repository heuristic included; no paired repository configured'
+    lines += ['---','','## Coverage','','| Check | Result |','|---|---|','| Project health score | Included |',f'| BE ↔ FE compatibility | {compatibility_result} |','| Database migration guard | Included |','| Demo-data detector | Included |','| Sensitive data scanner | Included; values are redacted |','| Dead / temporary code | Included |',f'| Dependency vulnerability scan | {dependency_result} |','| CI / deployment guard | Included |','| Test-gap detector | Included for pull-request comparisons |','| Regression memory | Uses `.pmis-security/history.json` when present |','| Intern progress view | Weekly organization report uses PR/commit metadata |','| Release readiness report | Included |','| Document reality check | Included |','','> “Needs verification” is evidence for review, not an accusation.']
     return '\n'.join(lines)+'\n',{'health_score':score,**counts,'release_ready':ready,'fingerprints':[f.fingerprint for f in out]}
 def main():
-    a=argparse.ArgumentParser();a.add_argument('--repository',default=os.getenv('GITHUB_REPOSITORY','local/repo'));a.add_argument('--scope',default='full');a.add_argument('--base-ref',default='');a.add_argument('--dependency-alerts',default='pmis-dependency-alerts.json');a.add_argument('--output',default='pmis-security-report.md');x=a.parse_args();fs=files();out=[];scan(fs,out,x.base_ref,x.dependency_alerts);md,meta=report(x.repository,x.scope,fs,out);Path(x.output).write_text(md);Path('pmis-security-summary.json').write_text(json.dumps(meta));Path('pmis-security-state.json').write_text(json.dumps({'fingerprints':meta['fingerprints'],'updated_at':datetime.now(timezone.utc).isoformat()},indent=2));print(json.dumps(meta))
+    a=argparse.ArgumentParser();a.add_argument('--repository',default=os.getenv('GITHUB_REPOSITORY','local/repo'));a.add_argument('--scope',default='full');a.add_argument('--base-ref',default='');a.add_argument('--dependency-alerts',default='pmis-dependency-alerts.json');a.add_argument('--paired-root',default='');a.add_argument('--output',default='pmis-security-report.md');x=a.parse_args();fs=files();out=[];scan(fs,out,x.base_ref,x.dependency_alerts,x.paired_root);md,meta=report(x.repository,x.scope,fs,out,x.paired_root);Path(x.output).write_text(md);Path('pmis-security-summary.json').write_text(json.dumps(meta));Path('pmis-security-state.json').write_text(json.dumps({'fingerprints':meta['fingerprints'],'updated_at':datetime.now(timezone.utc).isoformat()},indent=2));print(json.dumps(meta))
 if __name__=='__main__':main()
