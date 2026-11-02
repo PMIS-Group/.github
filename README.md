@@ -45,3 +45,7 @@ The following controls should be configured separately; this repository does not
 8. Optionally require CODEOWNERS review after repository ownership is mature.
 9. Configure Dependabot and secret scanning where available.
 10. Review GitHub App and personal access-token policies.
+
+## Engineering operations and onboarding
+
+[Repository Operations, Automation and Onboarding](docs/REPOSITORY-OPERATIONS.md) explains GitHub workflows, engineering contribution controls, release evidence, security, documentation upkeep, incident recovery and first-day onboarding. Its verification register distinguishes current evidence from work requiring validation.
