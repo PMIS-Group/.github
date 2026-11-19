@@ -77,6 +77,56 @@ def compatibility_with_pair(out, paired_root):
     if missing:
         add(out,rule='be-fe-compatibility',priority='medium',title='Potential frontend/backend API mismatch',area='BE ↔ FE compatibility check',path='paired repository contract',line=1,excerpt='\n'.join(missing[:20]),description='Static frontend API paths do not clearly match static backend routes across the configured repository pair.',why='A deployed UI can request an endpoint that its paired backend does not provide.',fix='Review the API contract; update the frontend, backend or committed OpenAPI specification.',confidence='needs verification')
 
+
+def sql_mask(content):
+    """Hide comments and literals while preserving offsets for report attribution."""
+    pattern = re.compile(
+        r"--[^\n]*|/\*.*?\*/|'(?:''|\\.|[^'])*'|"
+        r'\"(?:\"\"|[^\"])*\"|(?P<dollar>\$(?:[A-Za-z_]\w*)?\$).*?(?P=dollar)',
+        re.S,
+    )
+    return pattern.sub(lambda match: re.sub(r"[^\n]", " ", match.group()), content)
+
+def unbounded_updates(content):
+    masked = sql_mask(content)
+    for statement in re.finditer(r"[^;]+", masked):
+        sql = statement.group()
+        for update in re.finditer(r"\bUPDATE\b[\s\S]*?\bSET\b", sql, re.I):
+            # A WHERE in a subquery or a later sibling UPDATE does not restrict this UPDATE.
+            depth = sql[:update.end()].count("(") - sql[:update.end()].count(")")
+            level = depth
+            restricted = False
+            for token in re.finditer(r"\(|\)|\bWHERE\b|\bUPDATE\b", sql[update.end():], re.I):
+                word = token.group().upper()
+                if word == "(":
+                    level += 1
+                elif word == ")":
+                    level -= 1
+                    if level < depth:
+                        break
+                elif level == depth:
+                    if word == "WHERE":
+                        predicate = sql[update.end() + token.end():].split(';', 1)[0]
+                        predicate = re.split(r'\bRETURNING\b', predicate, flags=re.I)[0]
+                        unrestricted = re.fullmatch(r'[\s()]*(?:TRUE|1\s*=\s*1)[\s()]*', predicate, re.I)
+                        restricted = unrestricted is None
+                    break
+            if not restricted:
+                yield re.compile(r"\bUPDATE\b", re.I).search(
+                    masked, statement.start() + update.start())
+
+def hardcoded_credentials(content):
+    # Require an assignment/property, so "?token=" in a generated URL is excluded.
+    pattern = re.compile(
+        r"""(?ix)(?<![\w?&/.-])["']?[\w]*(?:password|api[_-]?key|secret|token)["']?
+        \s*[:=]\s*(?P<quote>["'])(?P<value>[^"'\r\n]{8,})(?P=quote)"""
+    )
+    for match in pattern.finditer(content):
+        value = match.group("value")
+        if not re.fullmatch(r"\$\{\{.*\}\}|\$\{.*\}|\$[A-Za-z_]\w*", value):
+            yield match
+
+
 def scan(fs,out,base,dependency_alerts='',paired_root=''):
     for p in fs:
         c=read(p); rel=str(p.relative_to(ROOT)); low=rel.lower()
@@ -86,18 +136,19 @@ def scan(fs,out,base,dependency_alerts='',paired_root=''):
           ('GitHub token committed',r'\bgh[pousr]_[A-Za-z0-9_]{20,}\b','critical'),
           ('AWS access key committed',r'\bAKIA[0-9A-Z]{16}\b','critical'),
           ('Hardcoded credential-like value',r'(?i)(?:password|api[_-]?key|secret|token)\s*[:=]\s*["\'][^"\']{8,}["\']','high')]:
-            m=re.search(rx,c)
+            matches = hardcoded_credentials(c) if title == 'Hardcoded credential-like value' else re.finditer(rx, c)
             is_test = bool(re.search(r'(^|/)(?:test|tests|__tests__)/|\.(?:test|spec)\.[^/]+$', rel, re.I))
-            safe_reference = ('${{ secrets.' in c or re.search(r'\$[A-Za-z_]', (m.group(0) if m else '')) or is_test or 'Sanitizer' in p.name or p.name == '.env.example')
-            if m and not safe_reference:find(out,'sensitive-data',priority,title,'Sensitive data scanner',p,c,m,'A value resembling a credential is tracked in source.','Secrets in Git history can be copied, reused or exposed.','Remove it, rotate the real credential, and use deployment/GitHub secrets.',True)
+            for m in matches:
+                safe_reference = is_test or 'Sanitizer' in p.name or p.name == '.env.example'
+                if not safe_reference:find(out,'sensitive-data',priority,title,'Sensitive data scanner',p,c,m,'A value resembling a credential is tracked in source.','Secrets in Git history can be copied, reused or exposed.','Remove it, rotate the real credential, and use deployment/GitHub secrets.',True)
         # Database migration guard
         if p.suffix=='.sql' and '/backups/' not in '/'+rel and re.search(r'(migration|migrations|flyway|liquibase)',low):
             for title,rx,priority,desc,why,fix in [
               ('Random data mutation in migration',r'(?i)\b(random\s*\(|rand\s*\()','critical','A migration generates random values while changing data.','Migrations must be deterministic and recoverable.','Remove random mutation; use explicit reviewed values or a test-data seed.'),
               ('Destructive database operation',r'(?i)\b(drop\s+(?:table|schema|database)|truncate\s+table|delete\s+from)\b','high','A migration contains a destructive operation.','Production data or schema can be removed.','Require an explicit safe scope and document data impact.'),
               ('Unbounded database update',r'(?im)^\s*update\s+[\w."`]+\s*(?:set|\n)','high','A migration updates table data.','Without a restrictive WHERE clause it can change every row.','Add a restrictive WHERE clause or explain and test the full-table rewrite.')]:
-                m=re.search(rx,c)
-                if m:find(out,'migration-guard',priority,title,'Database migration guard',p,c,m,desc,why,fix,confidence='needs verification' if title=='Unbounded database update' else 'confirmed')
+                matches = unbounded_updates(c) if title == 'Unbounded database update' else re.finditer(rx, c)
+                for m in matches:find(out,'migration-guard',priority,title,'Database migration guard',p,c,m,desc,why,fix,confidence='needs verification' if title=='Unbounded database update' else 'confirmed')
         # Demo detector only runtime
         if re.search(r'(?i)(src|app|lib|features|controllers)',rel) and not re.search(r'(?i)(test|spec|story|example)',rel):
             m=re.search(r'\b(?:mock|fixture|fake|dummy|sample|demo)[A-Z_][A-Za-z0-9_]*\b',c)
@@ -112,7 +163,7 @@ def scan(fs,out,base,dependency_alerts='',paired_root=''):
             m=re.search(r'(?i)(deploy|production|release)',c)
             if m:find(out,'ci-deployment','medium','Deployment-related workflow needs CI dependency review','CI / deployment guard',p,c,m,'A deployment workflow was detected.','Branch-triggered deploys can bypass an immutable successful quality run.','Confirm deployment requires a successful CI result or protected release tag.',confidence='needs verification')
     # dependency readiness
-    names={p.name for p in fs}; manifests={'package.json','pom.xml','composer.json','requirements.txt','pyproject.toml','go.mod'}
+    names={p.name for p in fs}; manifests={'package.json','composer.json','requirements.txt','pyproject.toml','go.mod'}
     locks={'package-lock.json','pnpm-lock.yaml','yarn.lock','composer.lock','poetry.lock','go.sum'}
     if names & manifests and not names & locks:
         add(out,rule='dependency-lock',priority='medium',title='Dependency manifest has no lockfile',area='Dependency vulnerability scan',path=next(iter(names&manifests)),line=1,excerpt='Manifest is tracked but no supported lockfile was found.',description='Dependencies are not pinned by a lockfile.',why='Builds may resolve different versions over time.',fix='Generate and commit the lockfile used by CI.')
@@ -174,3 +225,4 @@ def report(repo,scope,fs,out,paired_root=''):
 def main():
     a=argparse.ArgumentParser();a.add_argument('--repository',default=os.getenv('GITHUB_REPOSITORY','local/repo'));a.add_argument('--scope',default='full');a.add_argument('--base-ref',default='');a.add_argument('--dependency-alerts',default='pmis-dependency-alerts.json');a.add_argument('--paired-root',default='');a.add_argument('--output',default='pmis-security-report.md');x=a.parse_args();fs=files();out=[];scan(fs,out,x.base_ref,x.dependency_alerts,x.paired_root);md,meta=report(x.repository,x.scope,fs,out,x.paired_root);Path(x.output).write_text(md);Path('pmis-security-summary.json').write_text(json.dumps(meta));Path('pmis-security-state.json').write_text(json.dumps({'fingerprints':meta['fingerprints'],'updated_at':datetime.now(timezone.utc).isoformat()},indent=2));print(json.dumps(meta))
 if __name__=='__main__':main()
+

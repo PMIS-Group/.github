@@ -38,6 +38,10 @@ permissions:
   issues: write
   security-events: read
 
+concurrency:
+  group: pmis-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   audit:
     name: PMIS Security audit
@@ -74,11 +78,14 @@ jobs:
               fs.writeFileSync('pmis-dependency-alerts.json', JSON.stringify({ available: false, alerts: [] }));
             }
       - name: Generate report
+        env:
+          AUDIT_SCOPE: ${{ inputs.scope }}
+          AUDIT_BASE_REF: ${{ inputs.base_ref }}
         run: |
           python .pmis-security-tool/pmis-security/pmis_security.py \
             --repository "$GITHUB_REPOSITORY" \
-            --scope "${{ inputs.scope }}" \
-            --base-ref "${{ inputs.base_ref }}" \
+            --scope "$AUDIT_SCOPE" \
+            --base-ref "$AUDIT_BASE_REF" \
             --dependency-alerts pmis-dependency-alerts.json \
             --paired-root .pmis-security-paired \
             --output pmis-security-report.md
@@ -96,7 +103,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Comment on pull request
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
         with:
           script: |
@@ -165,10 +172,25 @@ jobs:
         if: steps.report.outputs.changed == 'true'
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.PMIS_PROJECT_TOKEN || github.token }}
           script: |
             const { owner, repo } = context.repo;
             const head = 'pmis-security/reports';
             const existing = await github.rest.pulls.list({ owner, repo, head: `${owner}:${head}`, state: 'open' });
             if (!existing.data.length) {
-              await github.rest.pulls.create({ owner, repo, head, base: context.payload.repository.default_branch, title: 'docs: PMIS Security latest report', body: 'Automated PMIS Security report. Review findings before merging; this PR never changes application code.' });
+              try {
+                await github.rest.pulls.create({ owner, repo, head, base: context.payload.repository.default_branch, title: 'docs: PMIS Security latest report', body: 'Automated PMIS Security report. Review findings before merging; this PR never changes application code.' });
+              } catch (error) {
+                if (error.status !== 403 ||
+                    !String(error.message).includes('GitHub Actions is not permitted to create or approve pull requests')) {
+                  throw error;
+                }
+                const url = 'https://github.com/' + owner + '/' + repo +
+                  '/compare/' + context.payload.repository.default_branch + '...' + head + '?expand=1';
+                core.warning('Report saved, but GitHub policy blocks automatic PR creation. Open the comparison link in the job summary.');
+                await core.summary.addHeading('Security report saved')
+                  .addRaw('Automatic PR creation is blocked by repository or organization policy.')
+                  .addLink('Open the report pull request', url).write();
+              }
             }
+
