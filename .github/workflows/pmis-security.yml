@@ -169,17 +169,29 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Create or update report pull request
+        env:
+          REPORT_TOKEN: ${{ secrets.PMIS_PROJECT_TOKEN }}
         if: steps.report.outputs.changed == 'true'
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.PMIS_PROJECT_TOKEN || github.token }}
           script: |
             const { owner, repo } = context.repo;
+            let headers = {};
+            if (process.env.REPORT_TOKEN) {
+              const candidate = { authorization: 'Bearer ' + process.env.REPORT_TOKEN };
+              try {
+                await github.rest.repos.get({ owner, repo, headers: candidate });
+                headers = candidate;
+              } catch (error) {
+                if (![401, 403].includes(error.status)) throw error;
+                core.warning('PMIS_PROJECT_TOKEN is invalid or lacks access. Falling back to GITHUB_TOKEN; replace the organization secret.');
+              }
+            }
             const head = 'pmis-security/reports';
-            const existing = await github.rest.pulls.list({ owner, repo, head: `${owner}:${head}`, state: 'open' });
+            const existing = await github.rest.pulls.list({ owner, repo, headers, head: `${owner}:${head}`, state: 'open' });
             if (!existing.data.length) {
               try {
-                await github.rest.pulls.create({ owner, repo, head, base: context.payload.repository.default_branch, title: 'docs: PMIS Security latest report', body: 'Automated PMIS Security report. Review findings before merging; this PR never changes application code.' });
+                await github.rest.pulls.create({ owner, repo, headers, head, base: context.payload.repository.default_branch, title: 'docs: PMIS Security latest report', body: 'Automated PMIS Security report. Review findings before merging; this PR never changes application code.' });
               } catch (error) {
                 if (error.status !== 403 ||
                     !String(error.message).includes('GitHub Actions is not permitted to create or approve pull requests')) {
