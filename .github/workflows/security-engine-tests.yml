@@ -1,0 +1,26 @@
+name: Security engine tests
+
+on:
+  pull_request:
+    paths:
+      - 'pmis-security/**'
+      - '.github/workflows/pmis-security*.yml'
+      - '.github/workflows/security-engine-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'pmis-security/**'
+      - '.github/workflows/pmis-security*.yml'
+      - '.github/workflows/security-engine-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scanner-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test SQL and credential detection
+        run: python -m unittest discover -s pmis-security -p 'test_*.py' -v
